@@ -450,7 +450,10 @@ const SEED_CONTAINERS = [
   {id:"orange", name:"Orange Case", kind:"Case", colour:"#f97316", loc:"Marbella (with us)", country:"Spain", airtag:false, airtagName:"", weight:21,   limit:23, photos:[], history:[{date:"2026-07-05", note:"Flown Dubai → Marbella"}]},
   {id:"white",  name:"White Case",  kind:"Case", colour:"#cbd5e1", loc:"Marbella (with us)", country:"Spain", airtag:true,  airtagName:"", weight:null, limit:23, needsConfirm:true, photos:[], history:[{date:"2026-07-05", note:"Flown Dubai → Marbella"}]},
   {id:"black",  name:"Black Case",  kind:"Case", colour:"#475569", loc:"Marbella (with us)", country:"Spain", airtag:false, airtagName:"", weight:30,   limit:23, photos:[], history:[{date:"2026-07-05", note:"Flown Dubai → Marbella"}]},
-  {id:"mstore", name:"Marbella Storage", kind:"Storage", colour:"#8b5cf6", loc:"Marbella storage", country:"Spain", airtag:false, airtagName:"", weight:null, limit:23, placeholder:true, photos:[], history:[], note:"Holding area for items kept in Marbella storage — catalogue here as needed"}
+  {id:"rimowa", name:"Silver Rimowa", kind:"Case", colour:"#9ca3af", loc:"Marbella (with us)", country:"Spain", airtag:false, airtagName:"", weight:null, limit:23, photos:[], history:[{date:"2026-07-19", note:"Added — empty, to be packed"}], note:"Empty — ready to pack"},
+  {id:"mstore", name:"Marbella Storage", kind:"Storage", colour:"#8b5cf6", loc:"Marbella storage", country:"Spain", airtag:false, airtagName:"", weight:null, limit:23, placeholder:true, photos:[], history:[], note:"Holding area for items kept in Marbella storage — catalogue here as needed"},
+  {id:"ward_bnb", name:"Airbnb wardrobe", kind:"Place", colour:"#0d9488", loc:"Marbella (with us)", country:"Spain", airtag:false, airtagName:"", weight:null, limit:null, placeholder:true, photos:[], history:[], note:"Things currently out of a case — hanging in the Airbnb wardrobe / drawers while packing or unpacking"},
+  {id:"ward_home", name:"Home wardrobe", kind:"Place", colour:"#d97706", loc:"Marbella (with us)", country:"Spain", airtag:false, airtagName:"", weight:null, limit:null, placeholder:true, photos:[], history:[], note:"Out-of-case items kept at home — rename or change the location if home isn't Marbella"}
 ];
 
 // [name, owner, category, needsConfirm?, note?]
@@ -627,6 +630,14 @@ function migrate(s){
   merged.activity = s.activity || base.activity;
   merged.dismissedDupes = s.dismissedDupes || [];
   merged.resolved = s.resolved || [];
+  // Upgrade: make sure newly-added seed containers exist for people who already have data
+  const NEW_CONTAINERS = ["ward_bnb","ward_home","rimowa"];
+  NEW_CONTAINERS.forEach(id=>{
+    if(!merged.containers.some(c=>c.id===id)){
+      const seed = base.containers.find(c=>c.id===id);
+      if(seed) merged.containers.push(JSON.parse(JSON.stringify(seed)));
+    }
+  });
   return merged;
 }
 function save(){
@@ -1297,33 +1308,41 @@ function emptyState(msg, sub, actionHTML){
    CASES (containers)
    ============================================================ */
 function renderCases(){
-  const cards=state.containers.map(c=>{
+  const cardFor = (c)=>{
     const its=itemsIn(c.id);
     const ob=its.filter(i=>i.owner==="Bradley").length, oc=its.filter(i=>i.owner==="Claudia").length, obo=its.filter(i=>i.owner==="Both").length;
-    const wPct = c.weight ? Math.min(c.weight/(c.limit||23)*100,100) : 0;
-    const over = c.weight && c.weight>(c.limit||23);
-    const wColor = over ? "var(--bad)" : wPct>85 ? "var(--warn)" : "linear-gradient(90deg,var(--accent),var(--accent-2))";
-    const airtag = c.airtag
-      ? `<span style="color:var(--good); display:inline-flex; align-items:center; gap:5px">${IC.tag} On${c.airtagName?` · ${esc(c.airtagName)}`:""}</span>`
-      : `<span style="color:var(--faint)">No AirTag</span>`;
+    const isSpot = c.kind==="Place" || c.kind==="Storage";
+    const ic = c.kind==="Box"?"▣":c.kind==="Storage"?"▤":c.kind==="Place"?"🧥":c.kind==="Bag"?"🎒":"🧳";
     const photos = (c.photos&&c.photos.length)
       ? `<div class="mini-photos">${c.photos.slice(0,4).map(p=>`<img src="${p}" alt="">`).join("")}</div>` : "";
     const contents = its.length
       ? its.map(i=>`<div class="contents-li"><span class="dot dot-${ownerCls(i.owner)}" style="width:8px;height:8px;border-radius:50%"></span> <span style="flex:1">${esc(i.name)}</span> <span class="tiny">${esc(i.category)}</span></div>`).join("")
-      : `<div class="tiny" style="padding:8px 0">Empty — nothing catalogued here yet.</div>`;
+      : `<div class="tiny" style="padding:8px 0">Empty — nothing here right now.</div>`;
     const hist = (c.history&&c.history.length)
       ? c.history.map(h=>`<div class="contents-li"><span class="tiny" style="min-width:56px">${fmtDate(h.date)}</span> <span>${esc(h.note)}</span></div>`).join("")
       : `<div class="tiny" style="padding:8px 0">No movements logged.</div>`;
 
-    return `<div class="cont" style="--_c:${c.colour}">
-      <div class="cont-top">
-        <div class="cont-ic">${c.kind==="Box"?"▣":c.kind==="Storage"?"▤":"🧳"}</div>
-        <div class="cont-hd">
-          <h3>${esc(c.name)} ${c.needsConfirm?'<span class="pill st-needs_confirm">check</span>':''}</h3>
-          <div class="loc">${LOC_META[c.loc]?LOC_META[c.loc].flag:"📍"} ${esc(c.loc)} · ${its.length} item${its.length===1?'':'s'}</div>
-        </div>
-      </div>
-      <div class="cont-meta">
+    let meta, foot;
+    if(isSpot){
+      meta = `<div class="cont-meta" style="grid-template-columns:1fr">
+        <div class="cm">
+          <div class="k">${c.kind==="Place"?"Holding area":"Storage"}</div>
+          <div class="v" style="font-size:13.5px">${its.length} item${its.length===1?'':'s'} here · B ${ob} · C ${oc}${obo?` · Both ${obo}`:""}</div>
+          ${c.note?`<div class="tiny" style="margin-top:6px">${esc(c.note)}</div>`:""}
+        </div></div>`;
+      foot = `<div class="cont-foot">
+        <button class="btn sm pri" onclick="filterToContainer('${c.id}')">View items</button>
+        <button class="btn sm" onclick="openContainerEdit('${c.id}')">${IC.edit} Rename / move</button>
+        <button class="btn sm ghost" onclick="addPhoto('${c.id}')">＋ Photo</button>
+      </div>`;
+    } else {
+      const wPct = c.weight ? Math.min(c.weight/(c.limit||23)*100,100) : 0;
+      const over = c.weight && c.weight>(c.limit||23);
+      const wColor = over ? "var(--bad)" : wPct>85 ? "var(--warn)" : "linear-gradient(90deg,var(--accent),var(--accent-2))";
+      const airtag = c.airtag
+        ? `<span style="color:var(--good); display:inline-flex; align-items:center; gap:5px">${IC.tag} On${c.airtagName?` · ${esc(c.airtagName)}`:""}</span>`
+        : `<span style="color:var(--faint)">No AirTag</span>`;
+      meta = `<div class="cont-meta">
         <div class="cm">
           <div class="k">Weight</div>
           <div class="v">${c.weight? c.weight+" kg" : '<span style="color:var(--warn)">Not logged</span>'} ${over?'<span class="tiny tag-warn" style="padding:1px 6px;border-radius:5px">over</span>':''}</div>
@@ -1333,26 +1352,43 @@ function renderCases(){
           <div class="k">AirTag</div>
           <div class="v" style="font-size:13px">${airtag}</div>
           <div class="tiny" style="margin-top:6px">B ${ob} · C ${oc}${obo?` · Both ${obo}`:""}</div>
-        </div>
-      </div>
-      ${photos}
-      <div class="cont-foot">
+        </div></div>`;
+      foot = `<div class="cont-foot">
         <button class="btn sm pri" onclick="openMoveCase('${c.id}')">${IC.move} Move case</button>
         <button class="btn sm" onclick="openContainerEdit('${c.id}')">${IC.edit} Update</button>
         <button class="btn sm ghost" onclick="filterToContainer('${c.id}')">View items</button>
         <button class="btn sm ghost" onclick="addPhoto('${c.id}')">＋ Photo</button>
+      </div>`;
+    }
+
+    return `<div class="cont" style="--_c:${c.colour}">
+      <div class="cont-top">
+        <div class="cont-ic">${ic}</div>
+        <div class="cont-hd">
+          <h3>${esc(c.name)} ${c.needsConfirm?'<span class="pill st-needs_confirm">check</span>':''}</h3>
+          <div class="loc">${LOC_META[c.loc]?LOC_META[c.loc].flag:"📍"} ${esc(c.loc)} · ${its.length} item${its.length===1?'':'s'}</div>
+        </div>
       </div>
+      ${meta}
+      ${photos}
+      ${foot}
       <details class="disc"><summary><span class="caret">▸</span> Contents (${its.length})</summary><div class="disc-body">${contents}</div></details>
       <details class="disc"><summary><span class="caret">▸</span> Movement history</summary><div class="disc-body">${hist}</div></details>
     </div>`;
-  }).join("");
+  };
+
+  const cases  = state.containers.filter(c=>c.kind==="Case"||c.kind==="Box"||c.kind==="Bag");
+  const places = state.containers.filter(c=>c.kind==="Place"||c.kind==="Storage");
 
   $("#view-cases").innerHTML=`
     <div class="section-head">
       <h2>Cases &amp; boxes</h2>
-      <button class="btn pri sm" onclick="openContainerEdit(null)">${IC.add} Add case</button>
+      <button class="btn pri sm" onclick="openContainerEdit(null)">${IC.add} Add case or place</button>
     </div>
-    <div class="cont-grid">${cards}</div>
+    <div class="cont-grid">${cases.map(cardFor).join("")}</div>
+
+    <div class="eyebrow">Places &amp; storage — where things sit when they're out of a case</div>
+    <div class="cont-grid">${places.map(cardFor).join("")}</div>
   `;
 }
 function filterToContainer(id){
@@ -1756,7 +1792,7 @@ function openContainerEdit(id){
   const body=`
     <div class="field"><label>Name</label><input type="text" id="cName" value="${esc(c.name)}" placeholder="e.g. Red Holdall"></div>
     <div class="row2">
-      <div class="field"><label>Type</label><select id="cKind">${["Case","Box","Bag","Storage"].map(k=>`<option ${c.kind===k?'selected':''}>${k}</option>`).join("")}</select></div>
+      <div class="field"><label>Type</label><select id="cKind">${["Case","Box","Bag","Place","Storage"].map(k=>`<option ${c.kind===k?'selected':''}>${k}</option>`).join("")}</select></div>
       <div class="field"><label>Location</label><select id="cLoc">${["Dubai storage","Marbella storage","Marbella (with us)","Travelling to New York","New York"].map(l=>`<option ${c.loc===l?'selected':''}>${l}</option>`).join("")}</select></div>
     </div>
     <div class="field"><label>Colour</label><div class="opt-row" id="cSw">${SWATCHES.map(s=>`<button class="opt" data-sw="${s}" style="width:34px;height:34px;padding:0;background:${s};border-color:${c.colour===s?'var(--ink)':'var(--line)'};${c.colour===s?'box-shadow:0 0 0 2px var(--accent)':''}"></button>`).join("")}</div></div>
