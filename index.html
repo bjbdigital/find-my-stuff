@@ -289,6 +289,9 @@ select.fsel:focus{border-color:var(--accent)}
 .act .atxt{flex:1; min-width:0; font-size:13.5px; color:var(--body)}
 .act .atxt b{color:var(--ink); font-weight:550}
 .act .atime{font-family:var(--mono); font-size:10.5px; color:var(--faint); flex:none}
+.act.clickable{cursor:pointer; margin:0 -8px; padding-left:8px; padding-right:8px; border-radius:9px; transition:.12s}
+.act.clickable:hover{background:var(--card-2)}
+.cl label.clickable:hover b{text-decoration:underline}
 
 /* packing mode */
 .pack-case{margin-bottom:14px}
@@ -1532,8 +1535,11 @@ const ACT_IC={move:IC.move, edit:IC.edit, add:IC.add, status:IC.pack, verify:IC.
 function actRow(a){
   const t=new Date(a.ts);
   const time=t.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
-  return `<div class="act"><div class="ai">${ACT_IC[a.type]||IC.edit}</div>
-    <div class="atxt">${a.text}</div><div class="atime">${time}</div></div>`;
+  const item = a.itemId ? state.items.find(x=>x.id===a.itemId) : null;
+  const clk = item ? ` clickable" data-actitem="${a.itemId}` : "";
+  const chev = item ? `<div class="atime" style="opacity:.5">›</div>` : "";
+  return `<div class="act${clk}"><div class="ai">${ACT_IC[a.type]||IC.edit}</div>
+    <div class="atxt">${a.text}</div><div class="atime">${time}</div>${chev}</div>`;
 }
 function renderActivity(){
   const groups={};
@@ -1547,15 +1553,18 @@ function renderActivity(){
   // Recently resolved (confirmation history) — reviewable & undoable
   let resolvedHTML="";
   if((state.resolved||[]).length){
-    const rows=state.resolved.slice(0,20).map(r=>`
+    const rows=state.resolved.slice(0,20).map(r=>{
+      const stillItem = r.kind==="item" && state.items.some(x=>x.id===r.targetId);
+      const openAttr = stillItem ? ` class="clickable" data-actitem="${r.targetId}"` : (r.kind==="container" ? ` class="clickable" data-actcase="${r.targetId}"` : "");
+      return `
       <div class="cl" style="align-items:flex-start">
         <span class="ai" style="width:30px;height:30px;border-radius:9px;flex:none;display:grid;place-items:center;background:var(--good-soft);color:var(--good)">${IC.check}</span>
-        <label style="flex:1">
+        <label${openAttr} style="flex:1;${(stillItem||r.kind==='container')?'cursor:pointer':''}">
           <b style="color:var(--ink)">${esc(r.name)}</b>
           <div class="tiny" style="margin-top:2px">Confirmed “${esc(r.what)}” · ${fmtDateY(new Date(r.ts).toISOString().slice(0,10))} · ${new Date(r.ts).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}</div>
         </label>
         <button class="btn sm" onclick="undoResolve('${r.id}')">Undo</button>
-      </div>`).join("");
+      </div>`; }).join("");
     resolvedHTML=`
       <div class="eyebrow">Recently resolved (${state.resolved.length})</div>
       <div class="card pad" style="margin-bottom:18px">
@@ -2000,6 +2009,12 @@ function init(){
   gsi.onfocus=()=>{ if(gsi.value) runSearch(gsi.value); };
   $("#gsClear").onclick=()=>{ gsi.value=""; runSearch(""); gsi.focus(); };
   document.addEventListener("click", e=>{ if(!$("#gsearch").contains(e.target)) $("#searchPop").classList.remove("show"); });
+  document.addEventListener("click", e=>{
+    const it=e.target.closest("[data-actitem]");
+    if(it){ const id=it.dataset.actitem; if(state.items.some(x=>x.id===id)) openItemDetail(id); else toast("That item no longer exists"); return; }
+    const cs=e.target.closest("[data-actcase]");
+    if(cs){ if(getC(cs.dataset.actcase)) go("cases"); else toast("That case no longer exists"); }
+  });
   document.addEventListener("keydown", e=>{ if(e.key==="Escape"){ closeSheet(); $("#searchPop").classList.remove("show"); } });
   window.addEventListener("hashchange", ()=>{ const h=(location.hash||"").replace("#",""); if(NAV.some(n=>n.id===h)&&h!==currentView) go(h); });
 
